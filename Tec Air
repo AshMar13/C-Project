@@ -1,4 +1,93 @@
-#inlcude <iostream>
-
+#include <iostream>
 using namespace std;
 
+class Actuator {
+protected:
+    string state;
+    float power;
+    float energy_used; //energy indicator
+    float cycles; //longevity indicator
+    float on_time; //indicador de longevidad to minimize
+};
+
+class Pump : public Actuator {};
+class FCU : public Actuator {
+    float temperatureTransferCohefficicent;
+};
+class CoolingTowers : public Actuator {};
+class Chillers : public Actuator {};
+
+/////
+class FluidCircuit {
+    protected:
+    string fluid;
+};
+
+class Recirculating : public FluidCircuit {
+    public: //este lo debes de cambiar a protected creo
+        FCU aFCU;
+        Pump pumps[3];
+};
+class ChilledWater : public FluidCircuit {};
+class CondensedWaster : public FluidCircuit {};
+
+/////
+class Place {
+protected:
+    float room_temperature_off;
+    float room_temperature_init;
+    float ambient_room_rate;
+    float outdoor_temperature;
+    bool hour_occupancy[24];
+    Recirculating FCUcircuit[2]; //depende de cada edificio
+    int FCUqty;
+    int comfortOK;
+    int comfortBad;
+    float confortRatio;
+
+    public:
+        Place() {
+            room_temperature_init = 16;
+        }
+    void transferForHeatingOffConditionsForHours() {
+            //RToff = RTi + AAR+dt
+            room_temperature_off = room_temperature_init + ambient_room_rate *(outdoor_temperature - room_temperature_init); //completar
+        }
+    void transferForHeatingAccordingToFCUCiruit() {
+            float TTCf;
+        }
+    void calculateComfort(int hour) {
+            if (hour_occupancy(hour)) {
+                if (room_temperature_init > 20 && room_temperature_init < 24) {
+                    comfortOK++;
+                }
+                else {
+                    comfortBad++;
+                }
+            }
+};
+
+class Classroom : public Place {
+    public:
+        Classroom( bool H00, bool H01, bool H02, bool H03) { //tenemos que cambiar por las horas que dice en la presentación
+        ambient_room_rate = 0.7;
+    }
+};
+
+class Library : public Place {
+    public:
+        Library(bool H00, bool H01, bool H02, bool H03) { //tenemos que cambiar por las horas que dice en la presentación {
+        ambient_room_rate = 0.9; //checar rate
+    };
+};
+/////
+int main() {
+        Classroom classroom(false, true, false, true); //Tenemos que adapatarlo a las horas que nos dice en la presentación
+        for(int i=0; i < 24; i++) {
+            //ask for temperature
+            //decide what to turn off/on
+            //SIMULATE HEAT TRANSFER
+            //Simulate comfort
+            //print all actuators state
+        }
+    
