@@ -1,0 +1,140 @@
+//Codigo 1: A
+#include <iostream>
+#include <string>
+using namespace std;
+
+class Actuator {
+protected:
+    string state = "OFF";
+    float power = 0;
+    float energyUsed = 0;
+    int cycles = 0;
+    float ONtime = 0;
+
+public:
+    void turnOn(float powerConsumption) {
+        if (state == "OFF") {
+            state = "ON";
+            cycles++;
+        }
+        power = powerConsumption;
+        energyUsed += power;
+        ONtime++;
+    }
+
+    void turnOff() {
+        if (state == "ON") {
+            state = "OFF";
+        }
+        power = 0;
+    }
+
+    string getState() { return state; }
+};
+
+class FCU : public Actuator {
+    float TemperatureTransferCoefficient = 0.3;
+
+public:
+    void setTTC(float ttc) { TemperatureTransferCoefficient = ttc; }
+    float getTTC() { return TemperatureTransferCoefficient; }
+};
+
+class Place {
+protected:
+    float RoomTemperature = 16;
+    float AmbientRoomRate = 0.7;
+    bool HourOccupancy[24] = {false};
+    FCU fcu;
+    int ComfortOK = 0;
+    int ComfortBad = 0;
+
+public:
+    void setOccupancy(bool occupancy[24]) {
+        for (int i = 0; i < 24; i++) {
+            HourOccupancy[i] = occupancy[i];
+        }
+    }
+
+    void simulateHour(float outsideTemp, int hour) {
+        if (HourOccupancy[hour]) {
+            if (RoomTemperature < 20) {
+                fcu.turnOn(1.5); // Example power consumption
+            } else if (RoomTemperature > 24) {
+                fcu.turnOn(2.0);
+            } else {
+                fcu.turnOff();
+            }
+        } else {
+            fcu.turnOff();
+        }
+
+        float deltaTemp = outsideTemp - RoomTemperature;
+        if (fcu.getState() == "ON") {
+            RoomTemperature -= deltaTemp * fcu.getTTC();
+        } else {
+            RoomTemperature += AmbientRoomRate * deltaTemp;
+        }
+
+        if (HourOccupancy[hour]) {
+            if (RoomTemperature >= 20 && RoomTemperature <= 24) {
+                ComfortOK++;
+            } else {
+                ComfortBad++;
+            }
+        }
+    }
+
+    void printStatus(int hour) {
+        cout << "Hora: " << hour << endl;
+        cout << "Temperatura en la habitación: " << RoomTemperature << "°C" << endl;
+        cout << "Estado del clima (FCU): " << fcu.getState() << endl;
+        cout << "Indicadores de confort: OK = " << ComfortOK << ", Mal = " << ComfortBad << endl;
+        cout << "--------------------------" << endl;
+    }
+};
+
+class Classroom : public Place {
+public:
+    Classroom() { AmbientRoomRate = 0.7; }
+};
+
+class Library : public Place {
+public:
+    Library() { AmbientRoomRate = 0.9; }
+};
+
+int main() {
+    Classroom Aulas1, Aulas2;
+    Library Biblioteca;
+
+    // Definir ocupación por hora
+    bool aulas1Occupancy[24] = {false, true, false, true, false, false, false, true, true, false, false, false, true, true, false, false, true, true, false, false, false, true, true, false};
+    bool aulas2Occupancy[24] = {false, false, true, true, false, true, false, true, false, true, true, false, false, true, false, true, true, false, false, true, false, false, true, false};
+    bool bibliotecaOccupancy[24] = {false, false, true, false, true, false, true, true, false, true, true, false, true, false, true, false, true, false, true, false, true, true, false, false};
+
+        Aulas1.setOccupancy(aulas1Occupancy);
+        Aulas2.setOccupancy(aulas2Occupancy);
+        Biblioteca.setOccupancy(bibliotecaOccupancy);
+
+        for (int i = 0; i < 24; i++) {
+            float outsideTemp = 0.0;
+
+            // Solo preguntar la temperatura si hay ocupación
+            if (aulas1Occupancy[i] || aulas2Occupancy[i] || bibliotecaOccupancy[i]) {
+                cout << "Hora " << i << ": " << endl;
+                cout << "Ingrese la temperatura exterior: ";
+                cin >> outsideTemp;
+            }
+
+            Aulas1.simulateHour(outsideTemp, i);
+            Aulas2.simulateHour(outsideTemp, i);
+            Biblioteca.simulateHour(outsideTemp, i);
+
+            Aulas1.printStatus(i);
+            Aulas2.printStatus(i);
+            Biblioteca.printStatus(i);
+        }
+
+        return 0;
+    }
