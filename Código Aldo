@@ -1,0 +1,147 @@
+//Codigo 2: Aldo
+#include <iostream>
+#include <string>
+#include <iomanip>
+using namespace std;
+
+// Function to calculate the room temperature when the air conditioning is OFF
+double calculateRoomTemperatureOff(double initialTemperature, double transferRate, double temperatureDifference) {
+    return initialTemperature + transferRate * temperatureDifference;
+}
+
+// Function to calculate the chilled water temperature
+double calculateChilledWaterTemperature(double currentTemperature, double transferRate, double temperatureDifference, bool isChillerOn) {
+    if (isChillerOn) {
+        return currentTemperature - transferRate * temperatureDifference;
+    } else {
+        return currentTemperature + 0.1 * temperatureDifference;
+    }
+}
+
+// Function to calculate the condensed water temperature with restrictions
+double calculateCondensedWaterTemperature(double currentTemperature, double ambientTemperature, double transferRate, bool isCoolingTowerOn) {
+    double newTemperature;
+
+    if (isCoolingTowerOn) {
+        newTemperature = currentTemperature - transferRate * (currentTemperature - 18.0);
+    } else {
+        double delta = currentTemperature - ambientTemperature; // Difference with ambient
+        newTemperature = currentTemperature + 0.4 * delta;
+    }
+
+    // Restrict temperature within reasonable range
+    if (newTemperature < 18.0) newTemperature = 18.0;
+    if (newTemperature > 40.0) newTemperature = 40.0;
+
+    return newTemperature;
+}
+
+// Structure to represent a building
+struct Building {
+    string name;
+    double initialTemperature;
+    double transferRate;
+    int usageStartHour1;
+    int usageEndHour1;
+    int usageStartHour2;
+    int usageEndHour2;
+    double targetTemperature;
+
+    bool isInUse(int currentHour) {
+        return (currentHour >= usageStartHour1 && currentHour < usageEndHour1) ||
+               (currentHour >= usageStartHour2 && currentHour < usageEndHour2);
+    }
+};
+
+int main() {
+    // Define buildings as a static array
+    Building buildings[3] = {
+        {"Classroom Building 1", 16.0, 0.7, 10, 19, -1, -1, 21.0},
+        {"Classroom Building 2", 16.0, 0.7, 7, 22, -1, -1, 21.0},
+        {"Library", 16.0, 0.9, 7, 13, 15, 21, 21.0} // Library has two intervals of use
+    };
+
+    double chilledWaterTemperature = 10.0;
+    double condensedWaterTemperature = 25.0;
+    bool isChillerOn = true;
+    bool isCoolingTowerOn = true;
+    double chilledWaterTransferRate = 0.5;
+    double condensedWaterTransferRate = 0.7;
+    double totalEnergyConsumption = 0.0;
+    double totalComfortDeviation = 0.0;
+    int totalActuatorCycles = 0;
+
+    // Simulate for 24 hours
+    for (int currentHour = 0; currentHour < 24; ++currentHour) {
+        cout << "Hour: " << currentHour << ":00\n";
+
+        bool atLeastOneBuildingInUse = false;
+        double ambientTemperature;
+
+        // Check if any building is in use to determine if ambient temperature is needed
+        for (int i = 0; i < 3; ++i) {
+            if (buildings[i].isInUse(currentHour)) {
+                atLeastOneBuildingInUse = true;
+                break;
+            }
+        }
+
+        // Ask for ambient temperature only if needed
+        if (atLeastOneBuildingInUse) {
+            cout << "Enter the ambient temperature: ";
+            cin >> ambientTemperature;
+        }
+
+        // Check if all buildings are not in use
+        bool allBuildingsNotInUse = true;
+        for (int i = 0; i < 3; ++i) {
+            if (buildings[i].isInUse(currentHour)) {
+                allBuildingsNotInUse = false;
+                break;
+            }
+        }
+
+        // Update actuator states
+        isChillerOn = !allBuildingsNotInUse;
+        isCoolingTowerOn = !allBuildingsNotInUse;
+
+        // Process each building
+        for (int i = 0; i < 3; ++i) {
+            if (buildings[i].isInUse(currentHour)) {
+                double temperatureDifference = ambientTemperature - buildings[i].initialTemperature;
+                double newTemperature = calculateRoomTemperatureOff(buildings[i].initialTemperature, buildings[i].transferRate, temperatureDifference);
+
+                double comfortDeviation = abs(newTemperature - buildings[i].targetTemperature);
+                totalComfortDeviation += comfortDeviation;
+
+                cout << "Building: " << buildings[i].name << " | Room Temperature: " << newTemperature << "°C | Comfort Deviation: " << comfortDeviation << "°C\n";
+
+                buildings[i].initialTemperature = newTemperature;
+            } else {
+                cout << "Building: " << buildings[i].name << " | Not in use\n";
+            }
+        }
+
+        double chilledWaterDifference = chilledWaterTemperature - 8.0;
+        chilledWaterTemperature = calculateChilledWaterTemperature(chilledWaterTemperature, chilledWaterTransferRate, chilledWaterDifference, isChillerOn);
+        cout << "Chilled Water Temperature: " << chilledWaterTemperature << "°C\n";
+
+        condensedWaterTemperature = calculateCondensedWaterTemperature(condensedWaterTemperature, ambientTemperature, condensedWaterTransferRate, isCoolingTowerOn);
+        cout << "Condensed Water Temperature: " << condensedWaterTemperature << "°C\n";
+
+        totalEnergyConsumption += (isChillerOn ? 60 : 0) + (isCoolingTowerOn ? 40 : 0);
+        totalActuatorCycles += (isChillerOn ? 1 : 0) + (isCoolingTowerOn ? 1 : 0);
+
+        cout << "Chiller Status: " << (isChillerOn ? "ON" : "OFF") << "\n";
+        cout << "Cooling Tower Status: " << (isCoolingTowerOn ? "ON" : "OFF") << "\n\n";
+    }
+
+    // Display final metrics
+    cout << fixed << setprecision(2);
+    cout << "Simulation complete.\n";
+    cout << "Total Energy Consumption: " << totalEnergyConsumption << " kWh\n";
+    cout << "Average Comfort Deviation: " << totalComfortDeviation / (24 * 3) << "°C\n";
+    cout << "Total Actuator Cycles: " << totalActuatorCycles << "\n";
+
+    return 0;
+}
