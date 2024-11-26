@@ -1,0 +1,411 @@
+//Codigo 3: S
+#include <iostream>
+#include <string>
+using namespace std;
+
+class Actuator {
+    protected:
+        float energyUsed;
+        float power;
+        float cycles;
+        string state;
+        float onTime;
+    public:
+        Actuator(float powerConsumption) 
+            : energyUsed(0), power(powerConsumption), cycles(0), state("OFF"), onTime(0) {}
+
+        void turnOn() {
+            if (state == "OFF") {
+                state = "ON";
+                cycles += 0.5;
+            }
+        }
+
+        void turnOff() {
+            if (state == "ON") {
+                state = "OFF";
+                cycles += 0.5;
+            }
+        }
+
+        void updateEnergy(float hours) {
+            if (state == "ON") {
+                onTime += hours;
+                energyUsed += power;
+            }
+        }
+        void setNewConsumption(int consumption){
+            power = consumption;
+        }
+
+        string getState() { return state; }
+        float getEnergyUsed() { return energyUsed; }
+        int getCycles() { return cycles; }
+
+};
+
+class Pump : public Actuator {
+    public:
+        Pump(int power) : Actuator(power){}
+};
+
+class RecirculatingPump : public Pump{
+    public:
+        RecirculatingPump() : Pump(11){} 
+};
+
+class ChilledWaterPump : public Pump{
+    public:
+        ChilledWaterPump() : Pump(15){} 
+};
+
+class CondensedWaterPump : public Pump{
+    public:
+        CondensedWaterPump() : Pump(14){} 
+};
+
+class FCU : public Actuator {
+    public:
+        FCU() : Actuator(6){}
+};
+
+class Tower : public Actuator {
+    public:
+        Tower() : Actuator(40){}
+};
+
+class Chiller : public Actuator {
+    public:
+        Chiller() : Actuator(60){}
+};
+
+class Circuit {
+    protected:
+        string fluidName;
+    public:
+        Circuit(string fN) : fluidName(fN){}
+        string getFluidName(){return fluidName;}
+};
+
+class Recirculating : public Circuit {  //AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaa
+    public:
+        FCU realFcu;
+        RecirculatingPump realPump[3];
+        float TTCf;
+        float coolingCapacity;
+    public:
+        Recirculating() : Circuit("Air") {}
+        void getTTCf(string locationType){
+            int pumpsOn = 0;
+            for (int i = 0; i < 3; i++) {
+                if (realPump[i].getState() == "ON") {
+                    pumpsOn++;
+                }
+            }
+            if (locationType == "Aulas1") {
+                if (pumpsOn == 1) {
+                    TTCf = 0.3;
+                } else if (pumpsOn == 2) {
+                    TTCf = 0.4;
+                } else {
+                    TTCf = 0; 
+                    pumpsOn = 0;
+                }
+            } else if (locationType == "Aulas2") {
+                if (pumpsOn == 1) {
+                    TTCf = 0.25;
+                } else if (pumpsOn == 2) {
+                    TTCf = 0.4;
+                } else {
+                    TTCf = 0; 
+                    pumpsOn = 0;
+                }
+            } else if (locationType == "Biblioteca") {
+                if (pumpsOn == 1) {
+                    TTCf = 0.2;
+                } else if (pumpsOn == 2) {
+                    TTCf = 0.3;
+                } else if (pumpsOn == 3) {
+                    TTCf = 0.4;
+                } else {
+                    TTCf = 0; 
+                    pumpsOn = 0;
+                }
+            }
+        }
+        void getCoolingCapacity(float RToff, float Tch){
+            coolingCapacity = (RToff - Tch) * TTCf;
+        }
+};
+
+class ChilledWaterCircuit : public Circuit {
+    private:
+        Chiller realChillers[2];
+        ChilledWaterPump realPump[2];
+        float kc;
+        float kp;
+        float TTCch;
+        float chilledWaterTemp;
+    public:
+        ChilledWaterCircuit() : Circuit("Chilled Water"), chilledWaterTemp(15) {}
+        void getKc(){
+            int chiller_counter = 0;
+            for (int i = 0; i < 2; i++){
+                if (realChillers[i].getState() == "ON"){
+                    chiller_counter++;
+                }
+            }
+            if (chiller_counter == 2){
+                kc = 0.8;
+            } else if (chiller_counter == 1){
+                kc = 0.6;
+            } else {
+                kc = 0;
+            }
+        }
+        void getKp(){
+            int pump_counter = 0;
+            for (int i = 0; i < 2; i++){
+                if (realPump[i].getState() == "ON"){
+                    pump_counter++;
+                }
+            }
+            if (pump_counter == 2){
+                kp = 0.9;
+            } else if (pump_counter == 1){
+                kp = 0.5;
+            } else {
+                kp = 0;
+            }
+        }
+        void getTTCh(int Tcd){
+            TTCch = (3 - Tcd) / 10 * kc * kp;
+        }
+
+        void updateChilledWaterTemperature(int dt = 8, int Tcd = 20){
+            int chiller_counter = 0;
+            for (int i = 0; i < 2; i++){
+                if (realChillers[i].getState() == "ON"){
+                    chiller_counter++;
+                }
+            }
+            if(Tcd > 30 || chiller_counter == 0){
+                chilledWaterTemp = TTCch * dt;
+            }
+            else{
+                chilledWaterTemp = TTCch * (chilledWaterTemp - 8);
+            }
+        }
+};
+
+
+class CondensedWaterCircuit : public Circuit{
+    private:
+        float kt;
+        float kp;
+        float condensedWaterTemp;
+        float TTCcd;
+        Tower towers[2];
+        CondensedWaterPump cwPumps[2];
+    public:
+        CondensedWaterCircuit() : Circuit("Condensed Water"), condensedWaterTemp(18){}
+        void getKc(){
+            int chiller_counter = 0;
+            for (int i = 0; i < 2; i++){
+                if (towers[i].getState() == "ON"){
+                    chiller_counter++;
+                }
+            }
+            if (chiller_counter == 2){
+                kt = 1;
+            } else if (chiller_counter == 1){
+                kt = 0.7;
+            } else {
+                kt = 0;
+            }
+        }
+        void getKp(){
+            int pump_counter = 0;
+            for (int i = 0; i < 2; i++){
+                if (cwPumps[i].getState() == "ON"){
+                    pump_counter++;
+                }
+            }
+            if (pump_counter == 2){
+                kp = 0.7;
+            } else if (pump_counter == 1){
+                kp = 0.4;
+            } else {
+                kp = 0;
+            }
+        }
+        void getTTCcd(){
+            TTCcd = kt * kp;
+        }
+        void updateCondensedWaterTemperature(int dt = 8, int Tcd = 20){
+            int tower_counter = 0;
+            for (int i = 0; i < 2; i++){
+                if (towers->getState() == "ON"){
+                    tower_counter++;
+                }
+            }
+            if(tower_counter == 0){
+                condensedWaterTemp = TTCcd * (0.4 * dt);
+            }
+            else{
+                condensedWaterTemp = TTCcd * (condensedWaterTemp - dt);
+            }
+        }
+        float getCondensedWaterTemperature() {return condensedWaterTemp;}
+};
+
+
+class Place {
+public:                 //AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaaa
+    float InitialRoomTemp;
+    float OutdoorTemp;
+    float RoomTempOFF;
+    float ambRoomRate;
+    bool HourOccupancy[24];
+    Recirculating FCUcircuit[2];
+    int FCUqty;
+    int comfortOK;
+    int comfortBAD;
+    float ComfortRatio;
+public:
+    Place() {
+        InitialRoomTemp = 16;
+    }
+    Place(float AAR, int H0, int HF, int newFCUqty){
+        InitialRoomTemp = 16;
+        ambRoomRate = AAR;
+        FCUqty = newFCUqty;
+        comfortBAD = 0;
+        comfortOK = 0;
+        for (int i = 0; i < 24; i++) {
+            HourOccupancy[i] = (i >= H0 && i < HF);
+        }
+
+    }
+    void transferingHeatingOFFconditionsFor1Hour(float OutdoorTemp) {
+        float newRoomTempOFF = InitialRoomTemp + ambRoomRate * (OutdoorTemp-InitialRoomTemp);
+        InitialRoomTemp = newRoomTempOFF;
+    }
+    void calculateComfort(int hour) {
+        if (HourOccupancy[hour]) {
+            if (InitialRoomTemp > 20 && InitialRoomTemp < 24) {
+                comfortOK++;
+            } else {
+                comfortBAD++;
+            }
+        }
+    }
+
+    float getComfort() { return comfortOK;}
+    };
+
+class Classroom : public Place {
+    private:
+        float ambRoomRate = 0.7;
+    public:
+        Classroom( int H0, int HF, int FCUqty) : Place(ambRoomRate, H0, HF, FCUqty){}
+};
+
+class Library : public Place {
+    private:
+        float ambRoomRate = 0.9;
+    public:
+        Library( int H0, int HF, int FCUqty) : Place(ambRoomRate, H0, HF, FCUqty){}
+};
+
+
+int main() {
+    Classroom aulas1(8, 18, 2); // Horario de 8 a 18 horas, con 2 FCUs.
+    Classroom aulas2(7,10, 1);
+    Library library(9, 21, 3); // Horario de 9 a 21 horas, con 3 FCUs.
+
+    CondensedWaterCircuit condwatercircuit;
+    ChilledWaterCircuit chillWaterCircuit;
+
+    float temperature_array[] = {15,15,15,15,15,15,15,16,17,18,21,21,21,20, 20, 19, 18, 18, 18, 17, 17, 17, 17, 17};
+
+    for (int i = 0; i < 24; i++){
+        if (i == 7){
+            aulas1.FCUcircuit[0].realFcu.turnOn();
+            aulas1.FCUcircuit[1].realFcu.turnOn();
+            aulas1.FCUcircuit[0].realPump[0].turnOn();
+            aulas1.FCUcircuit[0].realPump[1].turnOn();
+            aulas1.FCUcircuit[1].realPump[0].turnOn();
+            aulas1.FCUcircuit[1].realPump[1].turnOn();
+
+            aulas2.FCUcircuit[0].realFcu.turnOn();
+            aulas2.FCUcircuit[0].realPump[0].turnOn();
+            aulas2.FCUcircuit[0].realPump[1].turnOn();
+
+
+            library.FCUcircuit[0].realFcu.turnOff();
+            library.FCUcircuit[0].realPump[0].turnOff();
+            library.FCUcircuit[0].realPump[1].turnOff();
+            library.FCUcircuit[0].realPump[2].turnOff();
+
+
+            aulas1.transferingHeatingOFFconditionsFor1Hour(temperature_array[i]);
+            aulas2.transferingHeatingOFFconditionsFor1Hour(temperature_array[i]);
+            library.transferingHeatingOFFconditionsFor1Hour(temperature_array[i]);
+
+        } else {
+            aulas1.FCUcircuit[0].realFcu.turnOff();
+            aulas1.FCUcircuit[1].realFcu.turnOff();
+            aulas1.FCUcircuit[0].realPump[0].turnOff();
+            aulas1.FCUcircuit[0].realPump[1].turnOff();
+            aulas1.FCUcircuit[1].realPump[0].turnOff();
+            aulas1.FCUcircuit[1].realPump[1].turnOff();
+
+            aulas2.FCUcircuit[0].realFcu.turnOn();
+            aulas2.FCUcircuit[0].realPump[0].turnOff();
+            aulas2.FCUcircuit[0].realPump[1].turnOff();
+
+
+            library.FCUcircuit[0].realFcu.turnOn();
+            library.FCUcircuit[0].realPump[0].turnOff();
+            library.FCUcircuit[0].realPump[1].turnOff();
+            library.FCUcircuit[0].realPump[2].turnOff();
+            
+        }
+
+        aulas1.FCUcircuit[0].getTTCf("Aulas1");
+        aulas1.FCUcircuit[1].getTTCf("Aulas1");
+        aulas2.FCUcircuit[0].getTTCf("Aulas1");
+        library.FCUcircuit[0].getTTCf("Aulas1");
+
+
+    aulas1.calculateComfort(i);
+    aulas2.calculateComfort(i);
+    library.calculateComfort(i);
+    }
+
+    cout << aulas1.getComfort() << endl;
+    cout << aulas2.getComfort() << endl;
+    cout << library.getComfort() << endl;
+
+    /*// Encender algunos actuadores
+    Recirculating recirculatingCircuit;
+    recirculatingCircuit.realPump[0].turnOn();
+    recirculatingCircuit.realPump[1].turnOn();
+    
+    // Calcular TTCf para las Aulas1
+    recirculatingCircuit.getTTCf("Aulas1");
+    
+    // Simular transferencia de calor en condiciones OFF
+    classroom.transferingHeatingOFFconditionsFor1Hour(25); // Temperatura exterior de 25°C.
+    
+    // Actualizar consumo energético
+    recirculatingCircuit.realPump[0].updateEnergy(1.5); // 1.5 horas encendido.
+    
+    // Imprimir algunos valores para verificar el sistema.
+    cout << "Estado de la bomba 1: " << recirculatingCircuit.realPump[0].getState() << endl;
+    cout << "Consumo energético de la bomba 1: " << recirculatingCircuit.realPump[0].getEnergyUsed() << " kWh" << endl;
+    cout << "Temperatura de la habitación (OFF): " << classroom.RoomTempOFF << " °C" << endl;
+    */
+    return 0;
+}
