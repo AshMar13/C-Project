@@ -1,0 +1,209 @@
+#include <iostream>
+using namespace std;
+
+class Actuator {
+protected:
+    string state;
+    float power;
+    float energy_used; // energy indicator
+    float cycles; // longevity indicator
+    float on_time; // longevity time to minimize
+};
+
+class Pump : public Actuator {};
+class FCU : public Actuator {
+    float temperatureTransferCoefficient; // TTCf (coefficient of heat transfer)
+};
+class CoolingTowers : public Actuator {};
+class Chillers : public Actuator {};
+
+/////
+class FluidCircuit {
+protected:
+    string fluid;
+};
+
+class Recirculating : public FluidCircuit {
+public:
+    FCU aFCU;
+    Pump pumps[3];
+};
+
+class ChilledWater : public FluidCircuit {};
+class CondensedWater : public FluidCircuit {}; // Fix typo from "Waster" to "Water"
+
+/////
+class Place {
+public: // Cambié a public para acceso directo
+    float room_temperature_off;
+    float room_temperature_init;
+    float ambient_room_rate;
+    float outdoor_temperature;
+    bool hour_occupancy[24]; // Hacer pública la variable
+    Recirculating FCUcircuit[2]; // Two FCUs per building (adjustable)
+    int FCUqty;
+
+    int comfortOK; // Cambio a public
+    int comfortBad; // Cambio a public
+    float confortRatio;
+
+    Place() {
+        room_temperature_init = 16; // Default initial room temperature
+        comfortOK = 0;
+        comfortBad = 0;
+        FCUqty = 2; // Added missing semicolon
+    }
+
+    void adjustAmbientRate() {
+        int occupiedHours = 0;
+        for (int i = 0; i < 24; i++) {
+            if (hour_occupancy[i]) {
+                occupiedHours++;
+            }
+        }
+    }
+
+    // Function to calculate room temperature during "off" conditions
+    void transferForHeatingOffConditionsForHours() {
+        room_temperature_off = room_temperature_init + ambient_room_rate * (outdoor_temperature - room_temperature_init);
+    }
+
+    // Function to transfer heating conditions according to FCU circuit
+    void transferForHeatingAccordingToFCUCircuit() {
+        float TTCf;
+        // Add logic for calculating TTCf based on current circuit conditions
+    }
+
+    // Function to calculate comfort level based on occupancy and temperature
+    void calculateComfort(int hour) {
+        if (hour_occupancy[hour]) {
+            // Si el edificio está ocupado en esta hora
+            // Verifica si la temperatura está dentro del rango de confort
+            if (room_temperature_init >= 20 && room_temperature_init <= 24) {
+                comfortOK++; // Si está dentro del rango, el confort aumenta
+            } else {
+                comfortBad++; // Si está fuera del rango, el confort baja
+                // Aquí puedes agregar lógica para aumentar el confort (por ejemplo, activar sistemas de calefacción/enfriamiento)
+                if (room_temperature_init < 20) {
+                    // Si la temperatura es demasiado baja, activa calefacción
+                    // Aumentar temperatura (simulación)
+                    room_temperature_init += 2.0; // Incrementa más rápido para asegurar ajuste rápido
+                } else if (room_temperature_init > 24) {
+                    // Si la temperatura es demasiado alta, activa enfriamiento
+                    // Disminuir temperatura (simulación)
+                    room_temperature_init -= 2.0; // Disminuir más rápido para asegurar ajuste rápido
+                }
+            }
+        }
+    }
+
+    // Adjust the temperature
+    void adjustTemperature(float desiredTemp) {
+        // Aumenta o disminuye la temperatura más rápido
+        if (room_temperature_init < desiredTemp) {
+            room_temperature_init += 2.0; // Aumentar temperatura
+        } else if (room_temperature_init > desiredTemp) {
+            room_temperature_init -= 2.0; // Disminuir temperatura
+        }
+    }
+};
+
+class Classroom : public Place {
+public:
+    Classroom(bool H00, bool H01, bool H02, bool H03) {
+        ambient_room_rate = 0.7; // Ambient room rate for classrooms
+        hour_occupancy[0] = H00;
+        hour_occupancy[1] = H01;
+        hour_occupancy[2] = H02;
+        hour_occupancy[3] = H03;
+    }
+};
+
+class Library : public Place {
+public:
+    Library(bool H00, bool H01, bool H02, bool H03) {
+        ambient_room_rate = 0.9; // Ambient room rate for libraries
+        hour_occupancy[0] = H00;
+        hour_occupancy[1] = H01;
+        hour_occupancy[2] = H02;
+        hour_occupancy[3] = H03;
+    }
+
+    // Adjust temperature in Library to ensure comfort
+    void adjustTemperature() {
+        if (room_temperature_init < 20) {
+            // Si la temperatura es muy baja, calentar
+            room_temperature_init += 2.0;
+        } else if (room_temperature_init > 24) {
+            // Si la temperatura es muy alta, enfriar
+            room_temperature_init -= 2.0;
+        }
+    }
+};
+
+/////
+int main() {
+    Classroom classroom(true, false, true, false); // Aula con ocupación diferente
+    Library library(false, true, false, true); // Biblioteca con ocupación diferente
+
+    // Simula un día completo (24 horas)
+    for (int i = 0; i < 24; i++) {
+        // Calcula la temperatura y el confort para cada edificio en cada hora
+        classroom.transferForHeatingOffConditionsForHours();
+        library.transferForHeatingOffConditionsForHours();
+
+        classroom.calculateComfort(i);
+        library.calculateComfort(i);
+
+        // Ajusta la temperatura en la biblioteca para alcanzar condiciones cómodas
+        library.adjustTemperature();
+
+        // Impresión de los resultados por cada hora de simulación
+        cout << "Hour: " << i << endl;
+
+        cout << "Classroom Comfort: " << classroom.comfortOK << " OK, " << classroom.comfortBad << " Bad" << endl;
+        cout << "Library Comfort: " << library.comfortOK << " OK, " << library.comfortBad << " Bad" << endl;
+
+        cout << "-----------------------------------------" << endl;
+    }
+
+    // Resumen final de confort y ocupación
+    int totalClassroomOccupiedHours = 0;
+    int totalLibraryOccupiedHours = 0;
+    int totalClassroomComfortableHours = 0;
+    int totalLibraryComfortableHours = 0;
+
+    // Calculamos el número de horas ocupadas y horas de confort
+    for (int i = 0; i < 24; i++) {
+        if (classroom.hour_occupancy[i]) {
+            totalClassroomOccupiedHours++;
+            if (classroom.room_temperature_init >= 20 && classroom.room_temperature_init <= 24) {
+                totalClassroomComfortableHours++;
+            }
+        }
+        if (library.hour_occupancy[i]) {
+            totalLibraryOccupiedHours++;
+            if (library.room_temperature_init >= 20 && library.room_temperature_init <= 24) {
+                totalLibraryComfortableHours++;
+            }
+        }
+    }
+
+    // Tasa de confort
+    float classroomComfortRatio = (float)totalClassroomComfortableHours / totalClassroomOccupiedHours * 100;
+    float libraryComfortRatio = (float)totalLibraryComfortableHours / totalLibraryOccupiedHours * 100;
+
+    // Imprimir resumen final
+    cout << "\nSummary of Comfort and Occupancy:" << endl;
+
+    cout << "Classroom Occupied Hours: " << totalClassroomOccupiedHours << endl;
+    cout << "Library Occupied Hours: " << totalLibraryOccupiedHours << endl;
+
+    cout << "Classroom Comfortable Hours: " << totalClassroomComfortableHours << endl;
+    cout << "Library Comfortable Hours: " << totalLibraryComfortableHours << endl;
+
+    cout << "Classroom Comfort Ratio: " << classroomComfortRatio << "%" << endl;
+    cout << "Library Comfort Ratio: " << libraryComfortRatio << "%" << endl;
+
+    return 0;
+}
