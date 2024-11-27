@@ -101,7 +101,7 @@ int main() {
     // Define occupancy schedules
     bool A1_occupancy[24] = {false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false};
     bool A2_occupancy[24] = {false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false};
-    bool library_occupancy[24] = {false, false, false, false, false, false, true, true, true, true, true, true, false, false, true, true, true, true, true, true, false, false, false, false};
+    bool library_occupancy[24] = { false, false, false, false, false, false, true, true, true, true, true, true, false, false, true, true, true, true, true, true, false, false, false, false};
 
     // Outdoor temperature simulation (summer conditions in CDMX)
     float outdoor_temperature = 30.0f;
