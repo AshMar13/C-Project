@@ -125,7 +125,7 @@ int main() {
         library.calculateComfortAndActuators(hour);
 
         // Print hourly state
-        cout << "Hour " << setw(2) << hour << ":\n";
+        cout << "Hour " << setw(2) << hour + 1 << ":\n";
         cout << "Outdoor Temp: " << fixed << setprecision(1) << outdoor_temperature << "C\n";
         cout << "A1 [" << (A1.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
              << A1.getTemperature() << "C, Actuator: " << (A1.getActuatorState() ? "ON" : "OFF") << "\n";
