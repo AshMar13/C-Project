@@ -3,7 +3,6 @@
 #include <iomanip>
 using namespace std;
 
-// Clase base para actuadores
 class Actuator {
 protected:
     string state = "OFF";
@@ -16,8 +15,8 @@ public:
     void simulate1Hr() {
         if (state == "ON") {
             energy_used += power;
-            on_time += 1.0; // Incrementar el tiempo encendido
-            cycles += 0.5;  // Suponer medio ciclo por hora encendido
+            on_time += 1.0;
+            cycles += 0.5;
         }
     }
 
@@ -37,49 +36,6 @@ public:
     float getOnTime() const { return on_time; }
 };
 
-// Clase para FCU
-class FCU : public Actuator {
-public:
-    float temperatureTransferCoefficient = 0.0;
-
-    void setTTC(float ttc) { temperatureTransferCoefficient = ttc; }
-    float getTTC() const { return temperatureTransferCoefficient; }
-};
-
-// Clase base para circuitos de fluido
-class FluidCircuit {
-protected:
-    string fluid_type;
-    float fluidTemperature = 0.0;
-
-public:
-    virtual void simulate1Hr(float outdoorTemp, float condensedTemp) = 0;
-    float getTemperature() const { return fluidTemperature; }
-};
-
-// Clase para agua fría
-class ChilledWater : public FluidCircuit {
-protected:
-    Actuator chillers[2];
-    Actuator pumps[4];
-
-public:
-    void simulate1Hr(float outdoorTemp, float condensedTemp) override {
-        int activeChillers = 1; // Suponer 1 chiller activo
-        int activePumps = 2;    // Suponer 2 bombas activas
-
-        float Kc = (activeChillers == 1) ? 0.6 : 0.8;
-        float Kp = (activePumps == 1) ? 0.5 : 0.9;
-        float TTCch = (30 - condensedTemp) / 12.0 * Kc * Kp;
-
-        fluidTemperature += TTCch * (8.0f - fluidTemperature);
-
-        for (auto &chiller : chillers) chiller.simulate1Hr();
-        for (auto &pump : pumps) pump.simulate1Hr();
-    }
-};
-
-// Clase para lugares
 class Place {
 protected:
     float room_temperature_off = 16.0;
@@ -88,7 +44,7 @@ protected:
     bool hour_occupancy[24] = {false};
     int comfortOK = 0;
     int comfortBad = 0;
-    FCU fcu;
+    Actuator fcu;
 
 public:
     Place(float rate) : ambient_room_rate(rate) {}
@@ -97,19 +53,30 @@ public:
         float dT = outdoorTemp - room_temperature_init;
         room_temperature_off = room_temperature_init + ambient_room_rate * dT;
 
-        if (hour_occupancy[hour]) {
-            fcu.turnOn(6.0); // Encender FCU con 6 kW
-            float TTC = fcu.getTTC();
-            room_temperature_init = room_temperature_off +
-                                    TTC * (chilledTemp - room_temperature_off);
+        if (hour_occupancy[hour]) { // Si hay ocupación
+            fcu.turnOn(6.0); // Encendemos el FCU
+            room_temperature_init = room_temperature_off + 0.5 * (chilledTemp - room_temperature_off);
 
+            // Comprobar si la temperatura está dentro del rango de confort
             if (room_temperature_init >= 20 && room_temperature_init <= 24) {
-                comfortOK++;
+                comfortOK++; // Si está en el rango de confort, marcamos ComfortOK
+                comfortBad = 0; // Resetear ComfortBAD al lograr confort
+                fcu.turnOff(); // Apagar el FCU cuando logremos el confort
             } else {
-                comfortBad++;
+                comfortBad++; // Si está fuera del rango de confort, marcamos ComfortBAD
+                // Intentamos corregir la temperatura (enciende el aire acondicionado hasta que se logre el confort)
+                while (room_temperature_init > 24.0 || room_temperature_init < 20.0) {
+                    fcu.turnOn(6.0); // Volver a encender el aire acondicionado para bajar la temperatura
+                    room_temperature_init -= 0.5; // Disminuir la temperatura
+                    if (room_temperature_init >= 20 && room_temperature_init <= 24) {
+                        comfortOK++; // Cuando logre confort, marca como ComfortOK
+                        comfortBad = 0; // Resetear ComfortBAD porque se ha corregido
+                        break;
+                    }
+                }
             }
         } else {
-            fcu.turnOff();
+            fcu.turnOff(); // Si no hay ocupación, apagamos el FCU
             room_temperature_init = room_temperature_off;
         }
 
@@ -124,16 +91,15 @@ public:
         cout << name << ":\n"
              << "  ComfortOK: " << comfortOK << ", ComfortBAD: " << comfortBad << "\n"
              << "  Fan&Coil Unit: State: " << fcu.getState()
-             << ", Energy: " << fcu.getEnergyUsed()
+             << ", Energy: " << fixed << setprecision(2) << fcu.getEnergyUsed()
              << ", Cycles: " << fcu.getCycles()
              << ", Time: " << fcu.getOnTime() << "\n"
              << "  Room Temperature: " << fixed << setprecision(2) << room_temperature_init << "\n";
     }
 };
 
-// Función principal
 int main() {
-    // Configuración inicial
+    // Configuración inicial de ocupación
     bool classroom1Occupancy[24] = {false, false, false, false, false, false, false, false, false, true,
                                     true, true, true, true, true, true, true, true, false, false,
                                     false, false, false, false};
@@ -149,17 +115,15 @@ int main() {
     classroom2.setOccupancy(classroom2Occupancy);
     library.setOccupancy(libraryOccupancy);
 
-    ChilledWater chilledCircuit;
-    float condensedTemp = 22.0;
+    float chilledWaterTemp = 8.0;
 
     // Simulación de 24 horas
     for (int hour = 0; hour < 24; ++hour) {
         cout << "Hour: " << setw(2) << hour << "\n";
 
-        classroom1.simulate1Hr(hour, 30.0, chilledCircuit.getTemperature());
-        classroom2.simulate1Hr(hour, 30.0, chilledCircuit.getTemperature());
-        library.simulate1Hr(hour, 30.0, chilledCircuit.getTemperature());
-        chilledCircuit.simulate1Hr(30.0, condensedTemp);
+        classroom1.simulate1Hr(hour, 30.0, chilledWaterTemp);
+        classroom2.simulate1Hr(hour, 30.0, chilledWaterTemp);
+        library.simulate1Hr(hour, 30.0, chilledWaterTemp);
 
         classroom1.printHourStatus("Aulas 1", hour);
         classroom2.printHourStatus("Aulas 2", hour);
@@ -167,7 +131,7 @@ int main() {
         cout << "---------------------------------------------\n";
     }
 
-    // Resumen final
+    // Resumen final a las 24:00 hrs
     cout << "at 24:00 hrs\n";
     classroom1.printHourStatus("Aulas 1", 24);
     classroom2.printHourStatus("Aulas 2", 24);
