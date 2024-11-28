@@ -40,13 +40,13 @@ public:
         if (hour_occupancy[hour]) {
             // Adjust actuator state based on comfort
             if (room_temperature < 20) {
-                room_temperature += 2.0; // Heat up faster
+                room_temperature += 1.5; // Heat up gradually
                 actuator_state = true;
             } else if (room_temperature > 24) {
-                room_temperature -= 2.0; // Cool down faster
+                room_temperature -= 1.5; // Cool down gradually
                 actuator_state = true;
             } else {
-                actuator_state = false; // Actuator is OFF when within comfort range
+                actuator_state = false; // Actuator OFF within comfort range
             }
 
             if (actuator_state) {
@@ -151,3 +151,4 @@ int main() {
 
     return 0;
 }
+
