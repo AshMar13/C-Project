@@ -1,141 +1,153 @@
 #include <iostream>
-#include <string>
 #include <iomanip>
 using namespace std;
 
-class Actuator {
-protected:
-    string state = "OFF";
-    float power = 0.0;
-    float energy_used = 0.0;
-    float cycles = 0.0;
-    float on_time = 0.0;
-
-public:
-    void simulate1Hr() {
-        if (state == "ON") {
-            energy_used += power;
-            on_time += 1.0;
-            cycles += 0.5;
-        }
-    }
-
-    void turnOn(float pwr) {
-        state = "ON";
-        power = pwr;
-    }
-
-    void turnOff() {
-        state = "OFF";
-        power = 0.0;
-    }
-
-    string getState() const { return state; }
-    float getEnergyUsed() const { return energy_used; }
-    float getCycles() const { return cycles; }
-    float getOnTime() const { return on_time; }
-};
-
 class Place {
 protected:
-    float room_temperature_off = 16.0;
-    float room_temperature_init = 16.0;
-    float ambient_room_rate = 0.7;
-    bool hour_occupancy[24] = {false};
-    int comfortOK = 0;
-    int comfortBad = 0;
-    Actuator fcu;
+    float room_temperature;
+    float ambient_room_rate;
+    float outdoor_temperature;
+    bool hour_occupancy[24];
+    bool actuator_state; // ON = true, OFF = false
 
 public:
-    Place(float rate) : ambient_room_rate(rate) {}
+    int comfortOK;
+    int comfortBad;
+    int actuatorONHours;
+    int totalOccupiedHours;
 
-    void simulate1Hr(int hour, float outdoorTemp, float chilledTemp) {
-        float dT = outdoorTemp - room_temperature_init;
-        room_temperature_off = room_temperature_init + ambient_room_rate * dT;
+    Place(float arr, float outdoorTemp, const bool occupancy[24]) {
+        room_temperature = 16.0f; // Initial temperature
+        ambient_room_rate = arr;
+        outdoor_temperature = outdoorTemp;
+        actuator_state = false; // Initial actuator state
+        comfortOK = 0;
+        comfortBad = 0;
+        actuatorONHours = 0;
+        totalOccupiedHours = 0;
+        for (int i = 0; i < 24; i++) {
+            hour_occupancy[i] = occupancy[i];
+            if (occupancy[i]) totalOccupiedHours++;
+        }
+    }
 
-        if (hour_occupancy[hour]) { // Si hay ocupación
-            fcu.turnOn(6.0); // Encendemos el FCU
-            room_temperature_init = room_temperature_off + 0.5 * (chilledTemp - room_temperature_off);
+    void transferForHeatingOffConditions() {
+        // Update room temperature during off conditions
+        room_temperature += ambient_room_rate * (outdoor_temperature - room_temperature);
+    }
 
-            // Comprobar si la temperatura está dentro del rango de confort
-            if (room_temperature_init >= 20 && room_temperature_init <= 24) {
-                comfortOK++; // Si está en el rango de confort, marcamos ComfortOK
-                comfortBad = 0; // Resetear ComfortBAD al lograr confort
-                fcu.turnOff(); // Apagar el FCU cuando logremos el confort
+    void calculateComfortAndActuators(int hour) {
+        if (hour_occupancy[hour]) {
+            // Adjust actuator state based on comfort
+            if (room_temperature < 20) {
+                room_temperature += 1.5; // Heat up gradually
+                actuator_state = true;
+            } else if (room_temperature > 24) {
+                room_temperature -= 1.5; // Cool down gradually
+                actuator_state = true;
             } else {
-                comfortBad++; // Si está fuera del rango de confort, marcamos ComfortBAD
-                // Intentamos corregir la temperatura (enciende el aire acondicionado hasta que se logre el confort)
-                while (room_temperature_init > 24.0 || room_temperature_init < 20.0) {
-                    fcu.turnOn(6.0); // Volver a encender el aire acondicionado para bajar la temperatura
-                    room_temperature_init -= 0.5; // Disminuir la temperatura
-                    if (room_temperature_init >= 20 && room_temperature_init <= 24) {
-                        comfortOK++; // Cuando logre confort, marca como ComfortOK
-                        comfortBad = 0; // Resetear ComfortBAD porque se ha corregido
-                        break;
-                    }
-                }
+                actuator_state = false; // Actuator OFF within comfort range
+            }
+
+            if (actuator_state) {
+                actuatorONHours++;
+            }
+
+            // Check comfort
+            if (room_temperature >= 20 && room_temperature <= 24) {
+                comfortOK++;
+            } else {
+                comfortBad++;
             }
         } else {
-            fcu.turnOff(); // Si no hay ocupación, apagamos el FCU
-            room_temperature_init = room_temperature_off;
+            // Update temperature passively when unoccupied
+            transferForHeatingOffConditions();
+            actuator_state = false;
         }
-
-        fcu.simulate1Hr();
     }
 
-    void setOccupancy(const bool occupancy[24]) {
-        for (int i = 0; i < 24; ++i) hour_occupancy[i] = occupancy[i];
+    float getTemperature() const {
+        return room_temperature;
     }
 
-    void printHourStatus(const string &name, int hour) const {
-        cout << name << ":\n"
-             << "  ComfortOK: " << comfortOK << ", ComfortBAD: " << comfortBad << "\n"
-             << "  Fan&Coil Unit: State: " << fcu.getState()
-             << ", Energy: " << fixed << setprecision(2) << fcu.getEnergyUsed()
-             << ", Cycles: " << fcu.getCycles()
-             << ", Time: " << fcu.getOnTime() << "\n"
-             << "  Room Temperature: " << fixed << setprecision(2) << room_temperature_init << "\n";
+    bool getActuatorState() const {
+        return actuator_state;
+    }
+
+    int getComfortOK() const {
+        return comfortOK;
+    }
+
+    int getComfortBad() const {
+        return comfortBad;
+    }
+
+    bool isOccupied(int hour) const {
+        return hour_occupancy[hour];
+    }
+
+    float calculateEnergySavings() const {
+        if (totalOccupiedHours == 0) return 0.0f; // Avoid division by zero
+        int actuatorOFFHours = totalOccupiedHours - actuatorONHours;
+        return (static_cast<float>(actuatorOFFHours) / totalOccupiedHours) * 100.0f;
+    }
+
+    int calculateEquipmentLongevity() const {
+        return totalOccupiedHours - actuatorONHours; // Total hours actuators were OFF
     }
 };
 
 int main() {
-    // Configuración inicial de ocupación
-    bool classroom1Occupancy[24] = {false, false, false, false, false, false, false, false, false, true,
-                                    true, true, true, true, true, true, true, true, false, false,
-                                    false, false, false, false};
-    bool classroom2Occupancy[24] = {false, false, false, false, false, false, true, true, true, true,
-                                    true, true, true, true, true, true, true, true, true, true,
-                                    true, false, false, false};
-    bool libraryOccupancy[24] = {false, false, false, false, false, false, true, true, true, true,
-                                 true, true, false, false, true, true, true, true, true, true,
-                                 false, false, false, false};
+    // Define occupancy schedules
+    bool A1_occupancy[24] = {false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false};
+    bool A2_occupancy[24] = {false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false};
+    bool library_occupancy[24] = { false, false, false, false, false, false, true, true, true, true, true, true, false, false, true, true, true, true, true, true, false, false, false, false};
 
-    Place classroom1(0.7), classroom2(0.7), library(0.9);
-    classroom1.setOccupancy(classroom1Occupancy);
-    classroom2.setOccupancy(classroom2Occupancy);
-    library.setOccupancy(libraryOccupancy);
+    // Outdoor temperature simulation (summer conditions in CDMX)
+    float outdoor_temperature = 30.0f;
 
-    float chilledWaterTemp = 8.0;
+    // Cool water temperature (constant)
+    float cool_water_temperature = 12.0f;
 
-    // Simulación de 24 horas
-    for (int hour = 0; hour < 24; ++hour) {
-        cout << "Hour: " << setw(2) << hour << "\n";
+    // Condensed water temperature (constant)
+    float condensed_water_temperature = 8.0f;
 
-        classroom1.simulate1Hr(hour, 30.0, chilledWaterTemp);
-        classroom2.simulate1Hr(hour, 30.0, chilledWaterTemp);
-        library.simulate1Hr(hour, 30.0, chilledWaterTemp);
+    // Create places
+    Place A1(0.7f, outdoor_temperature, A1_occupancy);
+    Place A2(0.7f, outdoor_temperature, A2_occupancy);
+    Place library(0.9f, outdoor_temperature, library_occupancy);
 
-        classroom1.printHourStatus("Aulas 1", hour);
-        classroom2.printHourStatus("Aulas 2", hour);
-        library.printHourStatus("Biblioteca", hour);
+    // Simulate for 24 hours
+    for (int hour = 0; hour < 24; hour++) {
+        // Update comfort and actuators for each place
+        A1.calculateComfortAndActuators(hour);
+        A2.calculateComfortAndActuators(hour);
+        library.calculateComfortAndActuators(hour);
+
+        // Print hourly state
+        cout << "Hour " << setw(2) << hour + 1 << ":\n";
+        cout << "Outdoor Temp: " << fixed << setprecision(1) << outdoor_temperature << "C\n";
+        cout << "A1 [" << (A1.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << A1.getTemperature() << "C, Actuator: " << (A1.getActuatorState() ? "ON" : "OFF") << "\n";
+        cout << "A2 [" << (A2.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << A2.getTemperature() << "C, Actuator: " << (A2.getActuatorState() ? "ON" : "OFF") << "\n";
+        cout << "Library [" << (library.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << library.getTemperature() << "C, Actuator: " << (library.getActuatorState() ? "ON" : "OFF") << "\n";
+        cout << "Cool Water Temp: " << cool_water_temperature << "C, Condensed Water Temp: " << condensed_water_temperature << "C\n";
         cout << "---------------------------------------------\n";
     }
 
-    // Resumen final a las 24:00 hrs
-    cout << "at 24:00 hrs\n";
-    classroom1.printHourStatus("Aulas 1", 24);
-    classroom2.printHourStatus("Aulas 2", 24);
-    library.printHourStatus("Biblioteca", 24);
+    // Final summary
+    cout << "\nFinal Summary:\n";
+    cout << "A1 - Comfort OK: " << A1.getComfortOK() << ", Comfort Bad: " << A1.getComfortBad()
+         << ", Energy Savings: " << A1.calculateEnergySavings() << "%, Equipment Longevity: "
+         << A1.calculateEquipmentLongevity() << " hours\n";
+    cout << "A2 - Comfort OK: " << A2.getComfortOK() << ", Comfort Bad: " << A2.getComfortBad()
+         << ", Energy Savings: " << A2.calculateEnergySavings() << "%, Equipment Longevity: "
+         << A2.calculateEquipmentLongevity() << " hours\n";
+    cout << "Library - Comfort OK: " << library.getComfortOK() << ", Comfort Bad: " << library.getComfortBad()
+         << ", Energy Savings: " << library.calculateEnergySavings() << "%, Equipment Longevity: "
+         << library.calculateEquipmentLongevity() << " hours\n";
 
     return 0;
 }
