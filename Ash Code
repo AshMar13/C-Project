@@ -1,0 +1,320 @@
+#include <iostream>
+#include <iomanip>
+#include <string>
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
+// Base Actuator Class
+class Actuator {
+protected:
+    bool state;
+    float power;
+    float energy_used;
+    int cycles;
+    int on_time;
+
+public:
+    Actuator(float defaultPower)
+        : state(false), power(defaultPower), energy_used(0), cycles(0), on_time(0) {}
+
+    virtual void simulate1Hr() {
+        if (state) {
+            energy_used += power;
+            on_time++;
+        }
+    }
+
+    virtual void turnOn() {
+        if (!state) {
+            state = true;
+            cycles++;
+        }
+    }
+
+    virtual void turnOff() { state = false; }
+
+    bool isOn() const { return state; }
+    float getEnergyUsed() const { return energy_used; }
+    int getCycles() const { return cycles; }
+    int getOnTime() const { return on_time; }
+};
+
+// Pump Class (inherits from Actuator)
+class Pump : public Actuator {
+public:
+    Pump() : Actuator(6.0f) {}
+};
+
+// Chiller Class (inherits from Actuator)
+class Chiller : public Actuator {
+public:
+    Chiller() : Actuator(60.0f) {}
+};
+
+// CoolingTowers Class (inherits from Actuator)
+class CoolingTowers : public Actuator {
+public:
+    CoolingTowers() : Actuator(40.0f) {}
+};
+
+// Fan Class (inherits from Actuator)
+class Fan : public Actuator {
+public:
+    Fan() : Actuator(6.0f) {}
+};
+
+// FluidCircuit Abstract Class
+class FluidCircuit {
+protected:
+    string fluid_name;
+    bool working;
+    float fluid_temperature;
+
+public:
+    FluidCircuit(const string& name, float temp)
+        : fluid_name(name), working(false), fluid_temperature(temp) {}
+
+    virtual void simulate1Hr(float outdoorTemp, float condensedTemp) = 0;
+
+    void setWorking(bool state) { working = state; }
+    bool isWorking() const { return working; }
+    float getFluidTemperature() const { return fluid_temperature; }
+};
+
+// Recirculating Class (inherits from FluidCircuit)
+class Recirculating : public FluidCircuit {
+private:
+    Fan fan;
+    vector<Pump> pumps;
+    int pumpQty;
+
+public:
+    Recirculating() : FluidCircuit("Water", 15.0f), pumpQty(0) {
+        pumps.resize(3); // Initialize 3 pumps
+    }
+
+    void turnOn(bool p1, bool p2, bool p3) {
+        fan.turnOn();
+        if (p1) pumps[0].turnOn();
+        if (p2) pumps[1].turnOn();
+        if (p3) pumps[2].turnOn();
+        pumpQty = p1 + p2 + p3;
+        working = true;
+    }
+
+    void turnOff() {
+        fan.turnOff();
+        for (auto& pump : pumps) pump.turnOff();
+        pumpQty = 0;
+        working = false;
+    }
+
+    void simulate1Hr(float outdoorTemp, float chilledTemp) override {
+        if (working) {
+            for (auto& pump : pumps) pump.simulate1Hr();
+            fan.simulate1Hr();
+            fluid_temperature -= 0.5f * pumpQty;
+            if (fluid_temperature < chilledTemp) fluid_temperature = chilledTemp;
+        } else {
+            fluid_temperature += 0.2f * (outdoorTemp - fluid_temperature);
+        }
+    }
+};
+
+// FCU Class (inherits from Actuator)
+class FCU : public Actuator {
+private:
+    float temperatureTransferCoefficient;
+
+public:
+    FCU() : Actuator(6.0f), temperatureTransferCoefficient(1.0f) {}
+
+    void setTTC(float ttc) { temperatureTransferCoefficient = ttc; }
+    float getTTC() const { return temperatureTransferCoefficient; }
+};
+
+// Place Class
+class Place {
+protected:
+    float temperature;
+    float ambientRate;
+    bool occupancy[24];
+    int comfortOK;
+    int comfortBad;
+    FCU fcu;
+
+public:
+    Place(float initialTemp, float ambientRate, const bool occupancyArr[24])
+        : temperature(initialTemp), ambientRate(ambientRate), comfortOK(0), comfortBad(0) {
+        std::copy(occupancyArr, occupancyArr + 24, occupancy);
+    }
+
+    virtual void simulateHour(int hour, float outdoorTemp, Recirculating& circuit) {
+        if (occupancy[hour]) {
+            if (temperature < 24) {
+                fcu.turnOn();
+                temperature += fcu.getTTC();
+            } else if (temperature > 24) {
+                fcu.turnOn();
+                temperature -= fcu.getTTC();
+            } else {
+                fcu.turnOff();
+            }
+
+            if (temperature >= 20 && temperature <= 24) {
+                comfortOK++;
+            } else {
+                comfortBad++;
+            }
+        } else {
+            fcu.turnOff();
+            temperature += ambientRate * (outdoorTemp - temperature);
+        }
+
+        fcu.simulate1Hr();
+        circuit.simulate1Hr(outdoorTemp, 12.0f);
+    }
+
+    bool isOccupied(int hour) const { return occupancy[hour]; }
+    float getTemperature() const { return temperature; }
+    bool isActuatorOn() const { return fcu.isOn(); }
+    int getComfortOK() const { return comfortOK; }
+    int getComfortBad() const { return comfortBad; }
+};
+
+class BiblioTec : public Place {
+private:
+    Fan fan;
+    Recirculating circuit;
+    float temperatureTransferCoefficient;
+
+public:
+    BiblioTec(float initialTemp, float ambientRate, const bool occupancyArr[24])
+        : Place(initialTemp, ambientRate, occupancyArr), temperatureTransferCoefficient(0.2f) {}
+
+    void simulateHour(int hour, float outdoorTemp, Recirculating& circuit) override {
+        if (isOccupied(hour)) {
+            int activePumps = 0;
+            if (temperature > 24) {
+                if (temperature > 28) {
+                    circuit.turnOn(true, true, true);
+                    activePumps = 3;
+                    temperatureTransferCoefficient = 0.4f;
+                } else if (temperature > 26) {
+                    circuit.turnOn(true, true, false);
+                    activePumps = 2;
+                    temperatureTransferCoefficient = 0.3f;
+                } else {
+                    circuit.turnOn(true, false, false);
+                    activePumps = 1;
+                    temperatureTransferCoefficient = 0.2f;
+                }
+                fan.turnOn();
+                temperature -= temperatureTransferCoefficient;
+            } else if (temperature < 20) {
+                circuit.turnOn(true, true, true);
+                activePumps = 3;
+                temperatureTransferCoefficient = 0.4f;
+                temperature += temperatureTransferCoefficient;
+            } else {
+                fan.turnOff();
+                circuit.turnOff();
+            }
+
+            if (temperature >= 20 && temperature <= 24) {
+                comfortOK++;
+            } else {
+                comfortBad++;
+            }
+        } else {
+            fan.turnOff();
+            circuit.turnOff();
+            temperature += ambientRate * (outdoorTemp - temperature);
+        }
+
+        fan.simulate1Hr();
+        circuit.simulate1Hr(outdoorTemp, 12.0f);
+    }
+
+    bool isFanOn() const { return fan.isOn(); }
+    bool isCircuitWorking() const { return circuit.isWorking(); }
+};
+
+
+int main() {
+    // Define occupancy schedules
+    bool A1_occupancy[24] = {false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false};
+    bool A2_occupancy[24] = {false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false};
+    bool biblio_occupancy[24] = {false, false, false, false, false, false, false, true, true, true, true, true, true, false, false, true, true, true, true, true, true, true, false, false};
+
+    // Create instances of places
+    Place A1(30.0f, 0.7f, A1_occupancy);
+    Place A2(30.0f, 0.6f, A2_occupancy);
+    BiblioTec library(30.0f, 0.9f, biblio_occupancy);
+
+    // Shared recirculating circuit
+    Recirculating sharedCircuit;
+
+    // Simulation variables
+    float outdoorTemp = 30.0f;         // Initial outdoor temperature
+    float condensedWaterTemp = 35.0f; // Initial condensed water temperature
+    float coolWaterTemp = 15.0f;      // Initial cool water temperature
+
+    // Hourly simulation
+    cout << fixed << setprecision(2);
+    cout << "Hourly Simulation:\n";
+    cout << "------------------------------------------------------------\n";
+
+    for (int hour = 0; hour < 24; hour++) {
+        // Simulate the temperature changes for the outdoor environment
+        outdoorTemp += (hour < 12) ? 0.5f : -0.5f; // Warmer during the day, cooler at night
+
+        // Simulate for each place
+        A1.simulateHour(hour, outdoorTemp, sharedCircuit);
+        A2.simulateHour(hour, outdoorTemp, sharedCircuit);
+        library.simulateHour(hour, outdoorTemp, sharedCircuit);
+
+        // Simulate the cooling system (shared circuit)
+        sharedCircuit.simulate1Hr(outdoorTemp, condensedWaterTemp);
+
+        // Print the state for this hour
+        cout << "Hour " << setw(2) << hour + 1 << " (" << (hour % 12 == 0 ? 12 : hour % 12)
+             << (hour < 12 ? "am" : "pm") << "):\n";
+        cout << "Outdoor Temp: " << outdoorTemp << "°C\n";
+        cout << "Cool Water Temp: " << sharedCircuit.getFluidTemperature() << "°C\n";
+
+        cout << "A1 [" << (A1.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << A1.getTemperature() << "°C, Actuator: " << (A1.isActuatorOn() ? "ON" : "OFF") << "\n";
+
+        cout << "A2 [" << (A2.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << A2.getTemperature() << "°C, Actuator: " << (A2.isActuatorOn() ? "ON" : "OFF") << "\n";
+
+        cout << "Library [" << (library.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << library.getTemperature() << "°C, Fan: " << (library.isFanOn() ? "ON" : "OFF")
+             << ", Circuit: " << (library.isCircuitWorking() ? "Working" : "Idle") << "\n";
+
+        cout << "------------------------------------------------------------\n";
+    }
+
+    // Final Summary
+    cout << "\nSimulation Summary:\n";
+    cout << "------------------------------------------------------------\n";
+
+    cout << "Comfort Metrics:\n";
+    cout << "A1 - Comfort OK: " << A1.getComfortOK() << ", Comfort Bad: " << A1.getComfortBad() << "\n";
+    cout << "A2 - Comfort OK: " << A2.getComfortOK() << ", Comfort Bad: " << A2.getComfortBad() << "\n";
+    cout << "Library - Comfort OK: " << library.getComfortOK() << ", Comfort Bad: " << library.getComfortBad() << "\n";
+
+    cout << "\nEnergy Savings:\n";
+    cout << "A1 Energy Used: " << A1.getTemperature() << " kWh\n"; // Example energy placeholder
+    cout << "A2 Energy Used: " << A2.getTemperature() << " kWh\n"; // Example energy placeholder
+    cout << "Library Energy Used: " << library.getTemperature() << " kWh\n"; // Example energy placeholder
+
+    cout << "\nEquipment Longevity:\n";
+    cout << "Shared Circuit Cycles: " << sharedCircuit.isWorking() << "\n"; // Example longevity placeholder
+    cout << "------------------------------------------------------------\n";
+
+    return 0;
+}
