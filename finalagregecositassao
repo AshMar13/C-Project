@@ -1,0 +1,202 @@
+#include <iostream>
+#include <iomanip>
+using namespace std;
+
+// Clase Actuator
+class Actuator {
+    bool state; // ON = true, OFF = false
+
+public:
+    Actuator() : state(false) {}
+
+    void turnOn() {
+        state = true;
+    }
+
+    void turnOff() {
+        state = false;
+    }
+
+    bool getState() const {
+        return state;
+    }
+};
+
+// Clase Pump
+class Pump {
+    float coolWaterTemp;
+    float condensedWaterTemp;
+
+public:
+    Pump(float coolTemp, float condensedTemp)
+        : coolWaterTemp(coolTemp), condensedWaterTemp(condensedTemp) {}
+
+    float getCoolWaterTemp() const {
+        return coolWaterTemp;
+    }
+
+    float getCondensedWaterTemp() const {
+        return condensedWaterTemp;
+    }
+};
+
+// Clase FluidCircuit
+class FluidCircuit {
+    float outdoorTemp;
+    float ambientRate;
+
+public:
+    FluidCircuit(float outdoorTemp, float ambientRate)
+        : outdoorTemp(outdoorTemp), ambientRate(ambientRate) {}
+
+    void adjustTemperature(float &roomTemp) const {
+        roomTemp += ambientRate * (outdoorTemp - roomTemp);
+    }
+};
+
+// Clase Place
+class Place {
+    float roomTemperature;
+    bool hourOccupancy[24];
+    Actuator actuator;
+    FluidCircuit circuit;
+
+    int comfortOK;
+    int comfortBad;
+    int actuatorONHours;
+    int totalOccupiedHours;
+
+public:
+    Place(float arr, float outdoorTemp, const bool occupancy[24])
+        : roomTemperature(16.0f), circuit(outdoorTemp, arr),
+          comfortOK(0), comfortBad(0), actuatorONHours(0), totalOccupiedHours(0) {
+        for (int i = 0; i < 24; i++) {
+            hourOccupancy[i] = occupancy[i];
+            if (occupancy[i]) totalOccupiedHours++;
+        }
+    }
+
+    void simulateHour(int hour) {
+        if (hourOccupancy[hour]) {
+            if (roomTemperature < 20) {
+                roomTemperature += 1.5; // Heat up
+                actuator.turnOn();
+            } else if (roomTemperature > 24) {
+                roomTemperature -= 1.5; // Cool down
+                actuator.turnOn();
+            } else {
+                actuator.turnOff();
+            }
+
+            if (actuator.getState()) {
+                actuatorONHours++;
+            }
+
+            if (roomTemperature >= 20 && roomTemperature <= 24) {
+                comfortOK++;
+            } else {
+                comfortBad++;
+            }
+        } else {
+            circuit.adjustTemperature(roomTemperature);
+            actuator.turnOff();
+        }
+    }
+
+    float getTemperature() const {
+        return roomTemperature;
+    }
+
+    bool getActuatorState() const {
+        return actuator.getState();
+    }
+
+    int getComfortOK() const {
+        return comfortOK;
+    }
+
+    int getComfortBad() const {
+        return comfortBad;
+    }
+
+    bool isOccupied(int hour) const {
+        return hourOccupancy[hour];
+    }
+
+    float calculateEnergySavings() const {
+        if (totalOccupiedHours == 0) return 0.0f;
+        int actuatorOFFHours = totalOccupiedHours - actuatorONHours;
+        return (static_cast<float>(actuatorOFFHours) / totalOccupiedHours) * 100.0f;
+    }
+
+    int calculateEquipmentLongevity() const {
+        return totalOccupiedHours - actuatorONHours;
+    }
+};
+
+// Main
+int main() {
+    // Define occupancy schedules
+    bool A1_occupancy[24] = {false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false};
+    bool A2_occupancy[24] = {false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false};
+    bool library_occupancy[24] = { false, false, false, false, false, false, true, true, true, true, true, true, false, false, true, true, true, true, true, true, false, false, false, false};
+
+    // Pump setup
+    Pump pump(12.0f, 8.0f); // Cool water = 12°C, Condensed water = 8°C
+
+    // Create places
+    Place A1(0.7f, 30.0f, A1_occupancy);
+    Place A2(0.7f, 30.0f, A2_occupancy);
+    Place library(0.9f, 30.0f, library_occupancy);
+
+    // Simulate for 24 hours
+    for (int hour = 0; hour < 24; hour++) {
+        A1.simulateHour(hour);
+        A2.simulateHour(hour);
+        library.simulateHour(hour);
+
+        // Print hourly state
+        cout << fixed << setprecision(2); // Redondear a 2 decimales
+        cout << "Hour " << setw(2) << hour + 1 << ":\n";
+        cout << "Outdoor Temp: 30.00C\n";
+        cout << "\n";
+
+        cout << "A1 [" << (A1.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << A1.getTemperature() << "C, Actuator: " << (A1.getActuatorState() ? "ON" : "OFF") << "\n"
+             << "Comfort OK: " << A1.getComfortOK() << ", Comfort Bad: " << A1.getComfortBad()
+             << ", Energy Savings: " << A1.calculateEnergySavings() << "%, Equipment Longevity: "
+             << A1.calculateEquipmentLongevity() << " hours\n";
+        cout << "\n";
+
+        cout << "A2 [" << (A2.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << A2.getTemperature() << "C, Actuator: " << (A2.getActuatorState() ? "ON" : "OFF") << "\n"
+             << "A2 - Comfort OK: " << A2.getComfortOK() << ", Comfort Bad: " << A2.getComfortBad()
+             << ", Energy Savings: " << A2.calculateEnergySavings() << "%, Equipment Longevity: "
+             << A2.calculateEquipmentLongevity() << " hours\n";
+        cout << "\n";
+
+        cout << "Library [" << (library.isOccupied(hour) ? "Occupied" : "Unoccupied") << "] Temp: "
+             << library.getTemperature() << "C, Actuator: " << (library.getActuatorState() ? "ON" : "OFF") << "\n";
+        cout << "Cool Water Temp: " << pump.getCoolWaterTemp() << "C, Condensed Water Temp: " << pump.getCondensedWaterTemp() << "C\n"
+            << "Library - Comfort OK: " << library.getComfortOK() << ", Comfort Bad: " << library.getComfortBad()
+            << ", Energy Savings: " << library.calculateEnergySavings() << "%, Equipment Longevity: "
+            << library.calculateEquipmentLongevity() << " hours\n";
+        cout << "\n";
+        cout << "---------------------------------------------\n";
+    }
+
+    // Final summary
+    cout << "\nFinal Summary:\n";
+    cout << fixed << setprecision(2); // Redondear a 2 decimales
+    cout << "A1 - Comfort OK: " << A1.getComfortOK() << ", Comfort Bad: " << A1.getComfortBad()
+         << ", Energy Savings: " << A1.calculateEnergySavings() << "%, Equipment Longevity: "
+         << A1.calculateEquipmentLongevity() << " hours\n";
+    cout << "A2 - Comfort OK: " << A2.getComfortOK() << ", Comfort Bad: " << A2.getComfortBad()
+         << ", Energy Savings: " << A2.calculateEnergySavings() << "%, Equipment Longevity: "
+         << A2.calculateEquipmentLongevity() << " hours\n";
+    cout << "Library - Comfort OK: " << library.getComfortOK() << ", Comfort Bad: " << library.getComfortBad()
+         << ", Energy Savings: " << library.calculateEnergySavings() << "%, Equipment Longevity: "
+         << library.calculateEquipmentLongevity() << " hours\n";
+
+    return 0;
+}
